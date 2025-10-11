@@ -1,0 +1,32 @@
+# .gitignore
+# Environment variables
+.env
+.env.local
+.env.production
+node_modules/
+
+# Firebase secrets
+serviceAccount.json
+firebase-admin.json
+*-key.json
+*.key
+
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*# Environment
+.env
+.env.local
+
+# Firebase
+serviceAccount.json
+firebase-admin.json
+*-key.json
+node_modules/
+.env
+.DS_Store
+*.log
+.history/
+serviceAccountKey.json
+.vscode/
