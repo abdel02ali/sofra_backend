@@ -39,8 +39,8 @@ exports.createProduct = async (data) => {
       throw new Error('Product name is required');
     }
 
-    if (!data.price || data.price <= 0) {
-      throw new Error('Valid product price is required');
+    if (!data.categories || !Array.isArray(data.categories) || data.categories.length === 0) {
+      throw new Error('At least one category is required');
     }
 
     // Check for duplicate product name
@@ -56,15 +56,22 @@ exports.createProduct = async (data) => {
     // Create the product
     const productId = await getNextProductId();
     
-    await collection.doc(productId).set({
+    const productData = {
       imageUrl: data.imageUrl || null,
       name: data.name.trim(),
-      price: parseFloat(data.price),
-      q: parseInt(data.quantity) || 0,
+      unit: data.unit || "unit",
+      quantity: parseInt(data.quantity) || 0, // Keep both for compatibility
+      categories: data.categories, // Array of categories
+      primaryCategory: data.primaryCategory || data.categories[0], // First category as primary
       description: data.description || "",
       createdAt: new Date(),
       updatedAt: new Date(),
-    });
+      lastUsed: null, // Will be updated when product is actually used
+      usageHistory: [], // Array to track usage events
+      totalUsed: 0, // Total quantity used historically
+    };
+    
+    await collection.doc(productId).set(productData);
     
     return { 
       id: productId,
@@ -79,19 +86,113 @@ exports.getAllProducts = async () => {
   const snapshot = await collection.get();
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 };
+// Track when a product is used/distributed to departments
+exports.recordProductUsage = async (productId, usageData) => {
+  try {
+    const productRef = collection.doc(productId);
+    const productDoc = await productRef.get();
+    
+    if (!productDoc.exists) {
+      throw new Error('Product not found');
+    }
 
+    const product = productDoc.data();
+    const usageQuantity = parseInt(usageData.quantity) || 0;
+    
+    // Validate sufficient stock
+    if (usageQuantity > product.q) {
+      throw new Error(`Insufficient stock. Available: ${product.q}, Requested: ${usageQuantity}`);
+    }
+
+    const usageRecord = {
+      id: generateId(), // Simple ID generator
+      quantity: usageQuantity,
+      department: usageData.department,
+      purpose: usageData.purpose || 'General use',
+      usedBy: usageData.usedBy || 'System',
+      usedAt: new Date(),
+      notes: usageData.notes || ''
+    };
+
+    // Update product with atomic operations
+    await productRef.update({
+      
+      quantity: admin.firestore.FieldValue.increment(-usageQuantity),
+      lastUsed: new Date(),
+      totalUsed: admin.firestore.FieldValue.increment(usageQuantity),
+      usageHistory: admin.firestore.FieldValue.arrayUnion(usageRecord),
+      updatedAt: new Date()
+    });
+
+    return {
+      message: 'Product usage recorded successfully',
+      remainingStock: product.q - usageQuantity,
+      usageRecord: usageRecord
+    };
+  } catch (error) {
+    console.error('Error recording product usage:', error);
+    throw error;
+  }
+};
 exports.getProductById = async (id) => {
   const doc = await collection.doc(id).get();
   if (!doc.exists) throw new Error("Product not found");
   return { id: doc.id, ...doc.data() };
 };
 
-exports.updateProduct = async (id, data) => {
-  await collection.doc(id).update({
-    ...data,
-    updatedAt: new Date()
-  });
-  return { success: true };
+exports.updateProduct = async (productId, updateData) => {
+  try {
+    const productRef = collection.doc(productId);
+    const productDoc = await productRef.get();
+    
+    if (!productDoc.exists) {
+      throw new Error('Product not found');
+    }
+
+    const allowedFields = ['name', 'unit', 'description', 'categories', 'primaryCategory', 'imageUrl'];
+    const updates = {
+      updatedAt: new Date()
+    };
+
+    // Only allow specific fields to be updated
+    allowedFields.forEach(field => {
+      if (updateData[field] !== undefined) {
+        if (field === 'name' && updateData.name) {
+          updates.name = updateData.name.trim();
+        } else if (field === 'categories' && updateData.categories) {
+          if (!Array.isArray(updateData.categories) || updateData.categories.length === 0) {
+            throw new Error('Categories must be a non-empty array');
+          }
+          updates.categories = updateData.categories;
+          updates.primaryCategory = updateData.primaryCategory || updateData.categories[0];
+        } else {
+          updates[field] = updateData[field];
+        }
+      }
+    });
+
+    // If name is being updated, check for duplicates (excluding current product)
+    if (updateData.name) {
+      const productsSnapshot = await collection
+        .where('name', '==', updateData.name.trim())
+        .get();
+
+      const duplicate = productsSnapshot.docs.find(doc => doc.id !== productId);
+      if (duplicate) {
+        throw new Error(`Product name "${updateData.name}" is already in use`);
+      }
+    }
+
+    await productRef.update(updates);
+
+    return {
+      message: 'Product updated successfully',
+      updatedFields: Object.keys(updates).filter(key => key !== 'updatedAt')
+    };
+  } catch (error) {
+    console.error('Error updating product:', error);
+    throw error;
+  }
 };
 
 exports.deleteProduct = async (id) => {

@@ -9,16 +9,25 @@ app.use(cors());
 app.use(express.json());
 
 // Import routes directly
-const invoiceRoutes = require('./routes/invoiceRoutes');
+
 const productRoutes = require('./routes/productRoutes');
-const clientRoutes = require('./routes/clientRoutes');
+
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const movementRoutes = require('./routes/movementRoutes');
+const departmentRoutes = require('./routes/departmentsRoutes');
+const categoriesRoutes = require('./routes/categoryRoutes');
+
+app.use('/api/movements', movementRoutes);
 
 // Use routes directly (no router.js needed)
-app.use('/api/invoices', invoiceRoutes);
+
 app.use('/api/products', productRoutes);
-app.use('/api/clients', clientRoutes);
+
 app.use('/api/dashboard', dashboardRoutes);
+
+
+app.use('/api/departments', departmentRoutes);
+app.use('/api/categories', categoriesRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -66,9 +75,7 @@ app.use((error, req, res, next) => {
 module.exports = app;
 
 // Local development (won't run on Vercel)
-if (require.main === module) {
-  const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => {
-    console.log(`Local server running on port ${PORT}`);
-  });
-}
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
+});
